@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="KSPLiveUpdates/KSPLiveUpdates.csproj" />
+  <Project Path="RunUpdaterTest/RunUpdaterTest.csproj" Id="00e5b8ca-237b-4b6e-a480-d560cea52181" />
+</Solution>

@@ -1,4 +1,4 @@
-﻿using KSPLiveUpdates;
-using static KSPLiveUpdates.TestDriver;
+﻿using KSPLiveTelemetry;
+using static KSPLiveTelemetry.TestDriver;
 
 TestDriver.main();

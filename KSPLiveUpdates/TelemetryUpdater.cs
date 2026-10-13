@@ -37,6 +37,7 @@ namespace KSPLiveTelemetry
         public Vessel.Situations Situation; // enum, see https://anatid.github.io/XML-Documentation-for-the-KSP-API/class_vessel.html#acea90b73d9b4523383503ec82f2f63bb
         public double StaticPressure; // for graphing, presumably atm pressure
         public Guid VesselId; // changes on undocking, but gives us clues into the identity of the ship
+        public string VesselName; // matches vessel -> mission
         public double Pitch; // part of AttitudeProcessor https://github.com/jrbudda/KerbalEngineer/blob/master/KerbalEngineer/Flight/Readouts/Vessel/AttitudeProcessor.cs
         public double Roll; // see above
         public double Heading; // see above
@@ -45,8 +46,8 @@ namespace KSPLiveTelemetry
 
         public double VelocityH;
         public double VelocityV;
-        public string VesselName;
-
+        public double VelocityObt;
+        public double VelocitySrf;
 
 
         public string JSON ()
@@ -59,9 +60,16 @@ namespace KSPLiveTelemetry
                 @", ""situation"": """ + Situation +
                 @""", ""static_pressure"": " + StaticPressure +
                 @", ""vessel_id"": """ + VesselId +
+                @", ""vessel_name"": """ + VesselName +
                 @""", ""pitch"": " + Pitch +
                 @", ""roll"": " + Roll +
                 @", ""heading"": " + Heading +
+                @", ""altitude_sea_level"": " + AltitudeSealevel +
+                @", ""altitude_terrain"": " + AltitudeTerrain +
+                @", ""velocity_h"": " + VelocityH +
+                @", ""velocity_v"": " + VelocityV +
+                @", ""velocity_orbital"": " + VelocityObt +
+                @", ""velocity_srf"": " + VelocitySrf +
                 @"}";
         }
     }
@@ -75,10 +83,17 @@ namespace KSPLiveTelemetry
 
     internal class TelemetryUpdater
     {
+        // when did we last update the game data in shared memory?
         public static DateTime LastSharedMemWrite;
-        public static TimeSpan MinUpdate;
+        // how long, in ms, between updates to game data for reading by HTTP thread?
+        public static TimeSpan GameDataInterval;
+        // how long, in ms, between HTTP POSTs to the backend?
+        public static TimeSpan HTTPSendInterval;
+        // shared memory, written by the game / plugin, read by the HTTP thread
         public static MemoryMappedFile MemMap;
+        // http endpoint address for the backend app interpreting the data. See "kspoverlay"
         public static string Endpoint;
+        // thread to read shared memory and send HTTP posts to backend
         public Thread HttpThread;
 
         public TelemetryUpdater()
@@ -90,7 +105,8 @@ namespace KSPLiveTelemetry
 
             FileIniDataParser configParser = new();
             IniData configData = configParser.ReadFile(configPath);
-            MinUpdate = TimeSpan.FromMilliseconds(Int32.Parse(configData["KSPOverlayUpdater"]["MinUpdate"]));
+            GameDataInterval = TimeSpan.FromMilliseconds(Int32.Parse(configData["KSPOverlayUpdater"]["GameDataInterval"]));
+            HTTPSendInterval = TimeSpan.FromMilliseconds(Int32.Parse(configData["KSPOverlayUpdater"]["HTTPSendInterval"]));
             Endpoint = configData["KSPOverlayUpdater"]["Endpoint"];
             if (Endpoint is null)
             {
@@ -122,12 +138,24 @@ namespace KSPLiveTelemetry
             
             updateData.Situation = FlightGlobals.ActiveVessel.situation;
             updateData.StaticPressure = FlightGlobals.ActiveVessel.staticPressurekPa;
+
+            updateData.VesselName = FlightGlobals.ActiveVessel.vesselName;
             updateData.VesselId = FlightGlobals.ActiveVessel.id;
 
             // attitude stats - see AttitudeProcessor https://github.com/jrbudda/KerbalEngineer/blob/master/KerbalEngineer/Flight/Readouts/Vessel/AttitudeProcessor.cs
             updateData.Pitch = AttitudeProcessor.Pitch;
             updateData.Roll = AttitudeProcessor.Roll;
             updateData.Heading = AttitudeProcessor.Heading;
+
+            // altitude stats
+            updateData.AltitudeSealevel = FlightGlobals.ActiveVessel.altitude;
+            updateData.AltitudeTerrain = FlightGlobals.ActiveVessel.heightFromTerrain;
+
+            // velocities
+            updateData.VelocityV = FlightGlobals.ActiveVessel.verticalSpeed;
+            updateData.VelocityH = FlightGlobals.ActiveVessel.horizontalSrfSpeed;
+            updateData.VelocityObt = FlightGlobals.ActiveVessel.obt_speed;
+            updateData.VelocitySrf = FlightGlobals.ActiveVessel.srfSpeed;
 
             return updateData;
         }
@@ -197,16 +225,14 @@ namespace KSPLiveTelemetry
         public void httpSendLoop()
         {
             DateTime lastHttpSend = DateTime.UtcNow - new TimeSpan(0, 0, 5);
-            // TODO: configurable polling time
-            TimeSpan pollTime = new TimeSpan(0, 0, 0, 0, 1000); // 1000 ms
             while (true)
             {
                 DateTime now = DateTime.UtcNow;
-                if (now - lastHttpSend < pollTime)
+                if (now - lastHttpSend < HTTPSendInterval)
                 {
                     //Debug.Log($"KSPLiveTelemetry {now - lastHttpSend} HTTP WAIT");
                     //Console.WriteLine("...not yet time to send");
-                    Thread.Sleep(pollTime);
+                    Thread.Sleep(HTTPSendInterval);
                     continue;
                 }
 
@@ -233,7 +259,7 @@ namespace KSPLiveTelemetry
                    Debug.Log($"KSPLiveTelemetry HTTP ERROR {exc.Message}");
                 }
                 lastHttpSend = now;
-                Thread.Sleep(pollTime);
+                Thread.Sleep(HTTPSendInterval);
             }
         }
 
@@ -261,7 +287,7 @@ namespace KSPLiveTelemetry
             
             DateTime now = DateTime.UtcNow;
             
-            if (now - LastSharedMemWrite < MinUpdate) {
+            if (now - LastSharedMemWrite < GameDataInterval) {
                 //Debug.Log($"KSPLiveTelemetry {now - LastSharedMemWrite} MEM WAIT");
                 return;
             }

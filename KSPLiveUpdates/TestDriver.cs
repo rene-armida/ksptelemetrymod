@@ -14,9 +14,9 @@ namespace KSPLiveTelemetry
             UpdateData ud = new UpdateData();
             ud.BodyName = "Eeloo";
             ud.DVLastStage = 12120.39193;
-            updater.writeShared(ud);
+            updater.writeShared(ud.JSON());
             // updater.sendHttpRequest();
-            updater.launchPollThread();
+            updater.launchHttpThread();
             Console.WriteLine("main thread sleeping for 2 seconds");
             Thread.Sleep(2000);
             Console.WriteLine("done");

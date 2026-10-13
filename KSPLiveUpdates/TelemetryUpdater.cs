@@ -6,6 +6,7 @@ using KerbalEngineer.Flight.Readouts.Vessel;
 using KSP;
 using Steamworks;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.IO.Pipes;
 using System.Linq.Expressions;
@@ -13,6 +14,8 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization.Json;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using UnityEngine;
 using VehiclePhysics;
@@ -29,48 +32,75 @@ namespace KSPLiveTelemetry
     internal class AwaitingData : Exception
     { }
 
+    // https://stackoverflow.com/questions/77795747/number-decimal-precision-with-system-text-json
+    internal class JsonConverterDouble : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader,
+            Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.GetDouble();
+        }
+
+        public override void Write(Utf8JsonWriter writer, double value,
+            JsonSerializerOptions options)
+        {
+            writer.WriteRawValue(value.ToString("0.##",
+                CultureInfo.InvariantCulture));
+        }
+    }
+
     internal class UpdateData
     {
-        public string Status;
-        public string BodyName;
-        public double DVLastStage;
-        public Vessel.Situations Situation; // enum, see https://anatid.github.io/XML-Documentation-for-the-KSP-API/class_vessel.html#acea90b73d9b4523383503ec82f2f63bb
-        public double StaticPressure; // for graphing, presumably atm pressure
-        public Guid VesselId; // changes on undocking, but gives us clues into the identity of the ship
-        public string VesselName; // matches vessel -> mission
-        public double Pitch; // part of AttitudeProcessor https://github.com/jrbudda/KerbalEngineer/blob/master/KerbalEngineer/Flight/Readouts/Vessel/AttitudeProcessor.cs
-        public double Roll; // see above
-        public double Heading; // see above
-        public float AltitudeTerrain;
-        public double AltitudeSealevel;
+        [JsonPropertyName("status")]
+        public string Status { get; set; }
+        [JsonPropertyName("soi_name")]
+        public string BodyName { get; set; }
+        [JsonPropertyName("dv_last_stage")]
+        public double DVLastStage { get; set; }
+        // enum, see https://anatid.github.io/XML-Documentation-for-the-KSP-API/class_vessel.html#acea90b73d9b4523383503ec82f2f63bb
+        [JsonPropertyName("situation")]
+        [JsonConverter(typeof(JsonStringEnumConverter<Vessel.Situations>))]
+        public Vessel.Situations Situation { get; set; }
+        // for graphing, presumably atm pressure
+        [JsonPropertyName("static_pressure")]
+        public double StaticPressure { get; set; }
+        // changes on undocking, but gives us clues into the identity of the ship
+        [JsonPropertyName("vessel_id")]
+        public Guid VesselId { get; set; }
+        // matches vessel -> mission
+        [JsonPropertyName("vessel_name")]
+        public string VesselName { get; set; }
+        // part of AttitudeProcessor https://github.com/jrbudda/KerbalEngineer/blob/master/KerbalEngineer/Flight/Readouts/Vessel/AttitudeProcessor.cs
+        [JsonPropertyName("pitch")]
+        public double Pitch { get; set; }
+        // see above
+        [JsonPropertyName("roll")]
+        public double Roll { get; set; }
+        // see above
+        [JsonPropertyName("heading")]
+        public double Heading { get; set; }
+        [JsonPropertyName("altitude_terrain")]
+        public float AltitudeTerrain { get; set; }
+        [JsonPropertyName("altitude_sea_level")]
+        public double AltitudeSealevel { get; set; }
 
-        public double VelocityH;
-        public double VelocityV;
-        public double VelocityObt;
-        public double VelocitySrf;
+        [JsonPropertyName("velocity_h")]
+        public double VelocityH { get; set; }
+        [JsonPropertyName("velocity_v")] 
+        public double VelocityV { get; set; }
+        [JsonPropertyName("velocity_orbital")] 
+        public double VelocityObt { get; set; }
+        [JsonPropertyName("velocity_srf")]
+        public double VelocitySrf { get; set; }
 
-
+        // return this instance serialized to JSON
         public string JSON ()
         {
-            return @"{" +
-                @"""irl_time"": """ + DateTime.UtcNow.ToString("o") +
-                @""", ""status"": """ + Status +
-                @""", ""soi_name"": """ + BodyName +
-                @""", ""dv_last_stage"": " + Convert.ToInt64(DVLastStage).ToString() +
-                @", ""situation"": """ + Situation +
-                @""", ""static_pressure"": " + StaticPressure +
-                @", ""vessel_id"": """ + VesselId +
-                @", ""vessel_name"": """ + VesselName +
-                @""", ""pitch"": " + Pitch +
-                @", ""roll"": " + Roll +
-                @", ""heading"": " + Heading +
-                @", ""altitude_sea_level"": " + AltitudeSealevel +
-                @", ""altitude_terrain"": " + AltitudeTerrain +
-                @", ""velocity_h"": " + VelocityH +
-                @", ""velocity_v"": " + VelocityV +
-                @", ""velocity_orbital"": " + VelocityObt +
-                @", ""velocity_srf"": " + VelocitySrf +
-                @"}";
+            var options = new JsonSerializerOptions()
+            {
+                Converters = { new JsonConverterDouble() }
+            };
+            return JsonSerializer.Serialize(this, options);
         }
     }
 
@@ -98,6 +128,7 @@ namespace KSPLiveTelemetry
 
         public TelemetryUpdater()
         {
+            Debug.Log("KSPLiveTelemetry init 1");
             // find configuration
             string configPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -105,6 +136,7 @@ namespace KSPLiveTelemetry
 
             FileIniDataParser configParser = new();
             IniData configData = configParser.ReadFile(configPath);
+            Debug.Log("KSPLiveTelemetry init 2");
             GameDataInterval = TimeSpan.FromMilliseconds(Int32.Parse(configData["KSPOverlayUpdater"]["GameDataInterval"]));
             HTTPSendInterval = TimeSpan.FromMilliseconds(Int32.Parse(configData["KSPOverlayUpdater"]["HTTPSendInterval"]));
             Endpoint = configData["KSPOverlayUpdater"]["Endpoint"];
@@ -113,12 +145,14 @@ namespace KSPLiveTelemetry
                 throw new Exception("'Endpoint' configuration is invalid");
             }
 
+            Debug.Log("KSPLiveTelemetry init 3");
             MemMap = MemoryMappedFile.CreateOrOpen("KSPLiveUpdates", 1024 * 512); // 512k max
 
             // create the background thread but do not start it
             HttpThread = new Thread(httpSendLoop);
             HttpThread.Priority = System.Threading.ThreadPriority.BelowNormal;
             HttpThread.IsBackground = true;
+            Debug.Log("KSPLiveTelemetry init 4");
         }
 
         public UpdateData GetUpdateData()
@@ -216,7 +250,7 @@ namespace KSPLiveTelemetry
         public void stopHttpThread()
         {
             // special flag content for the sender thread
-            //Debug.Log("KSPLiveTelemetry MEM END");
+            Debug.Log("KSPLiveTelemetry MEM END");
             writeShared("x");
         }
 
@@ -230,13 +264,13 @@ namespace KSPLiveTelemetry
                 DateTime now = DateTime.UtcNow;
                 if (now - lastHttpSend < HTTPSendInterval)
                 {
-                    //Debug.Log($"KSPLiveTelemetry {now - lastHttpSend} HTTP WAIT");
+                    Debug.Log($"KSPLiveTelemetry {now - lastHttpSend} HTTP WAIT");
                     //Console.WriteLine("...not yet time to send");
                     Thread.Sleep(HTTPSendInterval);
                     continue;
                 }
 
-                //Debug.Log($"KSPLiveTelemetry {now - lastHttpSend} HTTP SEND");
+                Debug.Log($"KSPLiveTelemetry {now - lastHttpSend} HTTP SEND");
                 //Console.WriteLine("...sending http request");
                 try
                 {
@@ -251,7 +285,7 @@ namespace KSPLiveTelemetry
                 {
                     // plugin is shutting down, got the request via shared memory, no data to send
                     // does mean that there is a delay of up to pollTime before the background thread exits
-                    //Debug.Log($"KSPLiveTelemetry {now - lastHttpSend} HTTP EXIT");
+                    Debug.Log($"KSPLiveTelemetry {now - lastHttpSend} HTTP EXIT");
                     return;
                 }
                 catch (Exception exc)
@@ -288,7 +322,7 @@ namespace KSPLiveTelemetry
             DateTime now = DateTime.UtcNow;
             
             if (now - LastSharedMemWrite < GameDataInterval) {
-                //Debug.Log($"KSPLiveTelemetry {now - LastSharedMemWrite} MEM WAIT");
+                Debug.Log($"KSPLiveTelemetry {now - LastSharedMemWrite} MEM WAIT");
                 return;
             }
 
@@ -298,12 +332,12 @@ namespace KSPLiveTelemetry
 
             try
             {
-                //Debug.Log($"KSPLiveTelemetry {now - LastSharedMemWrite} MEM WRITE");
+                Debug.Log($"KSPLiveTelemetry {now - LastSharedMemWrite} MEM WRITE");
                 writeShared(GetUpdateData().JSON());
             }
             catch (Exception exc)
             {
-                Debug.Log($"KSPLiveTelemetry ERROR {exc.Message}");
+                Debug.Log($"KSPLiveTelemetry MEM WRITE ERROR {exc.Message}");
             }
 
         }
@@ -325,13 +359,13 @@ namespace KSPLiveTelemetry
 
         public void Start()
         {
-            //Debug.Log("KSPLiveUpdatesAddon->Start");
+            Debug.Log("KSPLiveUpdatesAddon->Start");
             _updater.launchHttpThread();
         }
 
         public void OnDisable()
         {
-            //Debug.Log("KSPLiveUpdatesAddon->OnDisable");
+            Debug.Log("KSPLiveUpdatesAddon->OnDisable");
             _updater.stopHttpThread();
         }
 

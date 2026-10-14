@@ -1,4 +1,4 @@
 ﻿using KSPLiveTelemetry;
 using static KSPLiveTelemetry.TestDriver;
 
-TestDriver.main();
+TestDriver.mainHttpUpdate();

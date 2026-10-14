@@ -33,44 +33,91 @@ namespace KSPLiveTelemetry
     {
         public string Status;
         public string BodyName;
-        public double DVLastStage;
+        public double DVLastStage = Double.NaN;
         public Vessel.Situations Situation; // enum, see https://anatid.github.io/XML-Documentation-for-the-KSP-API/class_vessel.html#acea90b73d9b4523383503ec82f2f63bb
-        public double StaticPressure; // for graphing, presumably atm pressure
+        public double StaticPressure = Double.NaN; // for graphing, presumably atm pressure
         public Guid VesselId; // changes on undocking, but gives us clues into the identity of the ship
         public string VesselName; // matches vessel -> mission
-        public double Pitch; // part of AttitudeProcessor https://github.com/jrbudda/KerbalEngineer/blob/master/KerbalEngineer/Flight/Readouts/Vessel/AttitudeProcessor.cs
-        public double Roll; // see above
-        public double Heading; // see above
-        public float AltitudeTerrain;
-        public double AltitudeSealevel;
+        public double Pitch = Double.NaN; // part of AttitudeProcessor https://github.com/jrbudda/KerbalEngineer/blob/master/KerbalEngineer/Flight/Readouts/Vessel/AttitudeProcessor.cs
+        public double Roll = Double.NaN; // see above
+        public double Heading = Double.NaN; // see above
+        public double AltitudeTerrain = Double.NaN;
+        public double AltitudeSealevel = Double.NaN;
 
-        public double VelocityH;
-        public double VelocityV;
-        public double VelocityObt;
-        public double VelocitySrf;
+        public double VelocityH = Double.NaN;
+        public double VelocityV = Double.NaN;
+        public double VelocityObt = Double.NaN;
+        public double VelocitySrf = Double.NaN;
 
 
+
+        static public string JsonLine(string fieldname, string value)
+        {
+            return $"\"{fieldname}\": {value}, ";
+        }
+
+        static public string FloatLine ( string fieldname, double ? val )
+        {
+            string fval;
+            if (! val.HasValue || Double.IsNaN(val.Value) )
+            {
+                fval = "null";
+            }
+            else
+            {
+                fval = val.Value.ToString("#.##");
+            }
+            return JsonLine(fieldname, fval);
+        }
+
+        static public string StringLine (string fieldname, string ? value)
+        {
+            string fval;
+            if ( value is null || value is "" )
+            {
+                fval = "\"null\"";
+            }
+            else
+            {
+                fval = $"\"{value}\"";
+            }
+            return JsonLine(fieldname, fval);
+        }
+
+        // we prefer roll-your-own JSON serialization over dependency hell;
+        // couldn't find an easy way to get system.text.Json and especially
+        // system.ValueTuple over to the KSP environment
         public string JSON ()
         {
             return @"{" +
-                @"""irl_time"": """ + DateTime.UtcNow.ToString("o") +
-                @""", ""status"": """ + Status +
-                @""", ""soi_name"": """ + BodyName +
-                @""", ""dv_last_stage"": " + Convert.ToInt64(DVLastStage).ToString() +
-                @", ""situation"": """ + Situation +
-                @""", ""static_pressure"": " + StaticPressure +
-                @", ""vessel_id"": """ + VesselId +
-                @", ""vessel_name"": """ + VesselName +
-                @""", ""pitch"": " + Pitch +
-                @", ""roll"": " + Roll +
-                @", ""heading"": " + Heading +
-                @", ""altitude_sea_level"": " + AltitudeSealevel +
-                @", ""altitude_terrain"": " + AltitudeTerrain +
-                @", ""velocity_h"": " + VelocityH +
-                @", ""velocity_v"": " + VelocityV +
-                @", ""velocity_orbital"": " + VelocityObt +
-                @", ""velocity_srf"": " + VelocitySrf +
-                @"}";
+                // game state and envelope info
+                StringLine("irl_time", DateTime.UtcNow.ToString("o")) +
+                StringLine("status", Status) +
+
+                // matcher -> mission info
+                StringLine("soi_name", BodyName) +
+                StringLine("vessel_id", VesselId.ToString()) +
+                StringLine("vessel_name", VesselName) +
+                StringLine("situation", Situation.ToString()) +
+
+                // vessel stats
+                FloatLine("dv_last_stage", DVLastStage) +
+
+                // atitude
+                FloatLine("dv_last_stage", DVLastStage) +
+                FloatLine("pitch", Pitch) +
+                FloatLine("roll", Roll) +
+                FloatLine("heading", Heading) +
+
+                // altitude
+                FloatLine("static_pressure", StaticPressure) +
+                FloatLine("altitude_sea_level", AltitudeSealevel) +
+                FloatLine("altitude_terrain", AltitudeTerrain) +
+                FloatLine("velocity_h", VelocityH) +
+                FloatLine("velocity_v", VelocityV) +
+                FloatLine("velocity_obt", VelocityObt) +
+                FloatLine("velocity_srf", VelocitySrf) +
+                "\"_ignore\": null}";
         }
     }
 

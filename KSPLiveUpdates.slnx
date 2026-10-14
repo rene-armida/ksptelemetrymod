@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="JSONOutputTest/JSONOutputTest.csproj" Id="b73974b5-9a3b-4dd8-9fa9-cae28558fcd6" />
   <Project Path="KSPLiveUpdates/KSPLiveUpdates.csproj" />
   <Project Path="RunUpdaterTest/RunUpdaterTest.csproj" Id="00e5b8ca-237b-4b6e-a480-d560cea52181" />
 </Solution>

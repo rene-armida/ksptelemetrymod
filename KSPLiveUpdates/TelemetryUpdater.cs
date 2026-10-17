@@ -56,9 +56,9 @@ namespace KSPLiveTelemetry
         // aggregate mass across all tanks
         public double Mass;
         // 0-1 how much is left?
-        public float Remain;
+        public double Remain;
 
-        public PropellantSummary(string name, double mass, float remain)
+        public PropellantSummary(string name, double mass, double remain)
         {
             Name = name;
             Mass = mass;
@@ -305,6 +305,36 @@ namespace KSPLiveTelemetry
             HttpThread.IsBackground = true;
         }
 
+        // query all fuel tanks in the vehicle for this resource capacity
+        // TODO: cache? probably not worth it
+        static public PropellantSummary MakePropellantSummary(int resourceId)
+        {
+            double current = 0;
+            double capacity = 0;
+            foreach(Part part in FlightGlobals.ActiveVessel.parts)
+            {
+                foreach(PartResource partResource in part.Resources)
+                {
+                    // assuming flowstate is the green / red toggle and that true means it's being used
+                    if(partResource.info.id == resourceId) // TODO  && partResource.flowState)
+                    {
+                        current += partResource.amount;
+                        capacity += partResource.maxAmount;
+                    }
+                }
+            }
+
+            PartResourceDefinition resDef = PartResourceLibrary.Instance.GetDefinition(resourceId);
+            //UnityEngine.Debug.Log($"KSPLiveUpdates MEM propellant {resDef.name} current {current} density {resDef.density} cap {capacity}");
+
+            PropellantSummary propellantSummary = new PropellantSummary(
+                resDef.name,
+                current * resDef.density, // density is in metric tonnes
+                current / capacity);
+
+            return propellantSummary;
+        }
+
         public UpdateData GetUpdateData()
         {
             if (FlightGlobals.ActiveVessel == null)
@@ -377,7 +407,6 @@ namespace KSPLiveTelemetry
                     // i've verified that these increase with altitude and decreased pressure, so that seems good
                     engineModule.finalThrust,
                     engineModule.realIsp);                
-                List<PropellantSummary> propellantSummaries = new List<PropellantSummary>();
 
                 foreach(Propellant propellant in engineModule.propellants)
                 {
@@ -385,7 +414,7 @@ namespace KSPLiveTelemetry
                     engineSummary.PropellantNames.Add(propellant.name);
 
                     bool foundPropSum = false;
-                    foreach(PropellantSummary iPropSum in propellantSummaries)
+                    foreach(PropellantSummary iPropSum in updateData.Propellants)
                     {
                         if(propellant.name == iPropSum.Name)
                         {
@@ -400,11 +429,7 @@ namespace KSPLiveTelemetry
                         continue;
                     }
 
-                    PropellantSummary propellantSummary = new PropellantSummary(
-                        propellant.name, 
-                        1, //TODO
-                        0.5f); // TODO
-                    propellantSummaries.Add(propellantSummary);
+                    updateData.Propellants.Add(MakePropellantSummary(propellant.id));
                 }
                 updateData.Engines.Add(engineSummary);
             }

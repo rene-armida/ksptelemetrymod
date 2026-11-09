@@ -73,6 +73,7 @@ namespace KSPLiveTelemetry
         // true if paused, false otherwise
         public bool? Paused;
         public string BodyName;
+        public int? LastStageNum;
         public double DVLastStage = double.NaN;
         public Vessel.Situations Situation; // enum, see https://anatid.github.io/XML-Documentation-for-the-KSP-API/class_vessel.html#acea90b73d9b4523383503ec82f2f63bb
         public double StaticPressure = double.NaN; // for graphing, presumably atm pressure
@@ -119,13 +120,27 @@ namespace KSPLiveTelemetry
             }
             else
             {
-                fval = val.Value.ToString("#.###");
+                fval = val.Value.ToString("0.###");
             }
 
             // why do we still get an empty string sometimes? which other value is possible here?!
             if( fval == "")
             {
                 fval = "null";
+            }
+            return JsonLine(fieldname, fval, final);
+        }
+
+        static public string IntLine(string fieldname, int? val, bool final = false)
+        {
+            string fval;
+            if (!val.HasValue)
+            {
+                fval = "null";
+            }
+            else
+            {
+                fval = val.Value.ToString("#0");
             }
             return JsonLine(fieldname, fval, final);
         }
@@ -215,6 +230,7 @@ namespace KSPLiveTelemetry
             return @"{" +
                 // game state and envelope info
                 StringLine("irl_time", DateTime.UtcNow.ToString("o")) +
+                FloatLine("in_game_time", Planetarium.GetUniversalTime()) +
                 StringLine("scene", Scene) +
                 BoolLine("paused", Paused) +
 
@@ -225,6 +241,7 @@ namespace KSPLiveTelemetry
                 StringLine("situation", Situation.ToString()) +
 
                 // vessel stats
+                IntLine("last_stage_num", LastStageNum) + 
                 FloatLine("dv_last_stage", DVLastStage) +
                 FloatLine("total_mass", TotalMass) +
                 FloatLine("total_thrust", TotalThrust) + 
@@ -348,12 +365,16 @@ namespace KSPLiveTelemetry
             updateData.Paused = (Time.timeScale == 0);
 
             if (FlightGlobals.ActiveVessel.mainBody == null)
+            {
                 updateData.BodyName = "N/A";
+            }
             else
+            {
                 updateData.BodyName = FlightGlobals.ActiveVessel.mainBody.bodyDisplayName.LocalizeRemoveGender();
-
+            }
 
             // vessel stuff
+            updateData.LastStageNum = FlightGlobals.ActiveVessel.currentStage;
             updateData.DVLastStage = SimulationProcessor.LastStage.deltaV;
             updateData.Situation = FlightGlobals.ActiveVessel.situation;
             updateData.StaticPressure = FlightGlobals.ActiveVessel.staticPressurekPa;
